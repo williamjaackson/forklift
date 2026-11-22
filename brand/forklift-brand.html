@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Forklift — Brand Identity</title>
+<style>
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+    color: var(--foreground);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sheet {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+  }
+
+  .section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 12px);
+    padding: 16px;
+  }
+
+  .section-label {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  /* Hero Lockups */
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .logo-stage {
+    border-radius: calc(var(--radius, 12px) - 4px);
+    padding: 26px 20px 22px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .logo-stage.dark-stage {
+    background-color: #101214;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: 20px 20px;
+    border: 1px solid #262b31;
+    color: #f3f4f6;
+  }
+
+  .logo-stage.light-stage {
+    background-color: #f6f4ee;
+    background-image:
+      linear-gradient(rgba(16, 18, 20, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(16, 18, 20, 0.035) 1px, transparent 1px);
+    background-size: 20px 20px;
+    border: 1px solid #dfdcd2;
+    color: #101214;
+  }
+
+  .stage-tag {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    opacity: 0.55;
+  }
+
+  .hazard-stripe {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: repeating-linear-gradient(
+      -45deg,
+      #f5b700,
+      #f5b700 8px,
+      #101214 8px,
+      #101214 16px
+    );
+    opacity: 0.85;
+  }
+
+  .wordmark-row {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+  }
+
+  .wordmark-text {
+    font-size: 27px;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    text-transform: lowercase;
+  }
+
+  .tagline {
+    font-size: 12px;
+    opacity: 0.72;
+    letter-spacing: 0.01em;
+  }
+
+  /* Icon Scale Strip */
+  .icon-sizes {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  .icon-sample {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .icon-sample span {
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    color: var(--muted-foreground);
+  }
+
+  .cli-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #101214;
+    color: #f3f4f6;
+    border: 1px solid #2b3138;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-family: var(--font-mono, monospace);
+    font-size: 12px;
+  }
+
+  .cli-pill .prompt {
+    color: #f5b700;
+    font-weight: 700;
+  }
+
+  /* Swatches */
+  .palette-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .swatch-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+  }
+
+  .swatch-row.four {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .swatch {
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--secondary);
+  }
+
+  .swatch-color {
+    height: 42px;
+    width: 100%;
+  }
+
+  .swatch-meta {
+    padding: 7px 8px;
+  }
+
+  .swatch-name {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--foreground);
+  }
+
+  .swatch-hex {
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    color: var(--muted-foreground);
+    margin-top: 2px;
+  }
+
+  .swatch-role {
+    font-size: 10px;
+    color: var(--muted-foreground);
+    margin-top: 2px;
+    line-height: 1.25;
+  }
+
+  /* Product Application: GitHub Sync PR + forklift.yaml */
+  .product-grid {
+    display: grid;
+    grid-template-columns: 1.35fr 0.65fr;
+    gap: 10px;
+  }
+
+  .pr-card {
+    background: #101214;
+    border: 1px solid #262b31;
+    border-radius: 10px;
+    overflow: hidden;
+    color: #f3f4f6;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .pr-top {
+    background: #16191d;
+    border-bottom: 1px solid #262b31;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .pr-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .bot-badge {
+    background: #f5b700;
+    color: #101214;
+    font-family: var(--font-mono, monospace);
+    font-size: 9px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
+  .pr-title {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ready-pill {
+    font-family: var(--font-mono, monospace);
+    font-size: 9px;
+    font-weight: 600;
+    color: #4ade80;
+    background: rgba(34, 197, 94, 0.14);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    padding: 2px 7px;
+    border-radius: 99px;
+    flex-shrink: 0;
+  }
+
+  .pr-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-bottom: 1px solid #22272d;
+    background: #131619;
+  }
+
+  .stat-cell {
+    padding: 8px 10px;
+    border-right: 1px solid #22272d;
+  }
+
+  .stat-cell:last-child {
+    border-right: none;
+  }
+
+  .stat-num {
+    font-family: var(--font-mono, monospace);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+
+  .stat-lbl {
+    font-size: 9px;
+    color: #8b949e;
+    margin-top: 2px;
+  }
+
+  .pr-rows {
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .pr-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: #171a1e;
+    border: 1px solid #242930;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+
+  .pr-path {
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    color: #e5e7eb;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tag {
+    font-family: var(--font-mono, monospace);
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .tag-green {
+    background: rgba(34, 197, 94, 0.14);
+    color: #4ade80;
+  }
+
+  .tag-yellow {
+    background: rgba(245, 183, 0, 0.16);
+    color: #f5b700;
+  }
+
+  .tag-blue {
+    background: rgba(96, 165, 250, 0.14);
+    color: #93c5fd;
+  }
+
+  /* Config Card */
+  .yaml-card {
+    background: #101214;
+    border: 1px solid #262b31;
+    border-radius: 10px;
+    overflow: hidden;
+    color: #e5e7eb;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .yaml-head {
+    background: #16191d;
+    border-bottom: 1px solid #262b31;
+    padding: 8px 10px;
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    color: #f5b700;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .yaml-head span:last-child {
+    color: #8b949e;
+    font-size: 9px;
+  }
+
+  .yaml-body {
+    padding: 10px;
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    line-height: 1.55;
+    white-space: pre;
+    overflow-x: auto;
+    color: #cbd5e1;
+  }
+
+  .yk { color: #f5b700; }
+  .ys { color: #86efac; }
+  .yc { color: #64748b; }
+
+  /* Typography & Voice */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 12px;
+  }
+
+  .type-row {
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+  }
+
+  .type-row:first-of-type { padding-top: 2px; }
+  .type-row:last-of-type { border-bottom: none; padding-bottom: 2px; }
+
+  .type-display {
+    font-size: 19px;
+    font-weight: 800;
+    letter-spacing: -0.035em;
+  }
+
+  .type-ui {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+
+  .type-mono {
+    font-family: var(--font-mono, monospace);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .type-note {
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    color: var(--muted-foreground);
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .voice-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .voice-item {
+    background: var(--secondary);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  .voice-item strong {
+    display: block;
+    font-size: 10px;
+    font-family: var(--font-mono, monospace);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted-foreground);
+    margin-bottom: 2px;
+  }
+
+  @media (max-width: 600px) {
+    .hero-grid,
+    .product-grid,
+    .two-col {
+      grid-template-columns: 1fr;
+    }
+    .swatch-row,
+    .swatch-row.four {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .pr-stats {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="sheet">
+
+    <!-- 01 / Logo Mark & Lockups -->
+    <div class="section">
+      <div class="section-label">
+        <span>01 / Logo Mark &amp; Lockups</span>
+        <span>Industrial Utility + Dev Precision</span>
+      </div>
+
+      <div class="hero-grid">
+        <!-- Dark Primary -->
+        <div class="logo-stage dark-stage">
+          <span class="stage-tag">Dark / Primary</span>
+          <div class="wordmark-row">
+            <!-- Forklift geometric mark: mast + tines lifting a git-fork module -->
+            <svg width="38" height="38" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Forklift mark">
+              <!-- Vertical mast + bottom tine (L-frame) -->
+              <path d="M12 10C12 8.9 12.9 8 14 8H20C21.1 8 22 8.9 22 10V44H52C53.1 44 54 44.9 54 46V52C54 53.1 53.1 54 52 54H16C13.8 54 12 52.2 12 50V10Z" fill="#F5B700"/>
+              <!-- Hydraulic lift notch -->
+              <rect x="15" y="13" width="4" height="10" rx="2" fill="#101214" opacity="0.45"/>
+              <!-- Lifted commit/fork payload block -->
+              <rect x="27" y="13" width="26" height="26" rx="6" fill="#F3F4F6"/>
+              <!-- Minimal git-fork glyph inside payload -->
+              <circle cx="35.5" cy="21" r="2.7" fill="#101214"/>
+              <circle cx="44.5" cy="21" r="2.7" fill="#101214"/>
+              <circle cx="40" cy="31.5" r="2.7" fill="#101214"/>
+              <path d="M35.5 23.5V25.5C35.5 27.2 36.8 28.5 38.5 28.5H41.5C43.2 28.5 44.5 27.2 44.5 25.5V23.5M40 28.5V30" stroke="#101214" stroke-width="2.4" stroke-linecap="round"/>
+            </svg>
+            <span class="wordmark-text">forklift</span>
+          </div>
+          <div class="tagline">Heavy lifting for your forks.</div>
+          <div class="hazard-stripe"></div>
+        </div>
+
+        <!-- Light / Industrial -->
+        <div class="logo-stage light-stage">
+          <span class="stage-tag">Light / Docs</span>
+          <div class="wordmark-row">
+            <svg width="38" height="38" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Forklift mark light">
+              <path d="M12 10C12 8.9 12.9 8 14 8H20C21.1 8 22 8.9 22 10V44H52C53.1 44 54 44.9 54 46V52C54 53.1 53.1 54 52 54H16C13.8 54 12 52.2 12 50V10Z" fill="#101214"/>
+              <rect x="15" y="13" width="4" height="10" rx="2" fill="#F5B700"/>
+              <rect x="27" y="13" width="26" height="26" rx="6" fill="#F5B700"/>
+              <circle cx="35.5" cy="21" r="2.7" fill="#101214"/>
+              <circle cx="44.5" cy="21" r="2.7" fill="#101214"/>
+              <circle cx="40" cy="31.5" r="2.7" fill="#101214"/>
+              <path d="M35.5 23.5V25.5C35.5 27.2 36.8 28.5 38.5 28.5H41.5C43.2 28.5 44.5 27.2 44.5 25.5V23.5M40 28.5V30" stroke="#101214" stroke-width="2.4" stroke-linecap="round"/>
+            </svg>
+            <span class="wordmark-text">forklift</span>
+          </div>
+          <div class="tagline">Keep forks up to date. Automatically.</div>
+        </div>
+      </div>
+
+      <!-- Icon Scale & CLI Strip -->
+      <div class="icon-sizes">
+        <div class="icon-sample">
+          <!-- GitHub App Avatar 56px -->
+          <svg width="56" height="56" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="2" width="60" height="60" rx="14" fill="#F5B700"/>
+            <path d="M15 14C15 13 15.8 12.2 16.8 12.2H21.8C22.8 12.2 23.6 13 23.6 14V42.4H48.2C49.2 42.4 50 43.2 50 44.2V49.2C50 50.2 49.2 51 48.2 51H18.5C16.6 51 15 49.4 15 47.5V14Z" fill="#101214"/>
+            <rect x="28" y="15.5" width="21.5" height="21.5" rx="5" fill="#101214"/>
+            <circle cx="35.2" cy="22.3" r="2.2" fill="#F5B700"/>
+            <circle cx="42.4" cy="22.3" r="2.2" fill="#F5B700"/>
+            <circle cx="38.8" cy="30.8" r="2.2" fill="#F5B700"/>
+            <path d="M35.2 24.4V25.8C35.2 27.2 36.3 28.2 37.6 28.2H40C41.3 28.2 42.4 27.2 42.4 25.8V24.4M38.8 28.2V29.6" stroke="#F5B700" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <span>GitHub App</span>
+        </div>
+
+        <div class="icon-sample">
+          <!-- Monochrome Glyph -->
+          <div style="width:40px;height:40px;border-radius:10px;background:var(--secondary);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;">
+            <svg width="22" height="22" viewBox="0 0 64 64" fill="none">
+              <path d="M12 10C12 8.9 12.9 8 14 8H20C21.1 8 22 8.9 22 10V44H52C53.1 44 54 44.9 54 46V52C54 53.1 53.1 54 52 54H16C13.8 54 12 52.2 12 50V10Z" fill="currentColor"/>
+              <rect x="28" y="14" width="24" height="24" rx="5.5" stroke="currentColor" stroke-width="5"/>
+            </svg>
+          </div>
+          <span>Monochrome</span>
+        </div>
+
+        <div class="icon-sample">
+          <!-- Favicon -->
+          <div style="width:28px;height:28px;border-radius:7px;background:#101214;border:1px solid #2e343b;display:flex;align-items:center;justify-content:center;">
+            <svg width="16" height="16" viewBox="0 0 64 64" fill="none">
+              <path d="M10 8H22V44H54V56H10V8Z" fill="#F5B700"/>
+              <rect x="29" y="12" width="24" height="24" rx="5" fill="#F3F4F6"/>
+            </svg>
+          </div>
+          <span>Favicon</span>
+        </div>
+
+        <div class="icon-sample" style="align-items:flex-start;">
+          <div class="cli-pill">
+            <span class="prompt">$</span>
+            <span>forklift sync --pr</span>
+          </div>
+          <span>CLI Identity</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 02 / Color Palette -->
+    <div class="section">
+      <div class="section-label">
+        <span>02 / Color Palette</span>
+        <span>Matte Graphite + Safety Yellow</span>
+      </div>
+
+      <div class="palette-group">
+        <div class="swatch-row">
+          <div class="swatch">
+            <div class="swatch-color" style="background:#101214;"></div>
+            <div class="swatch-meta">
+              <div class="swatch-name">Chassis</div>
+              <div class="swatch-hex">#101214</div>
+              <div class="swatch-role">Primary dark surface</div>
+            </div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-color" style="background:#181B1F;"></div>
+            <div class="swatch-meta">
+              <div class="swatch-name">Steel</div>
+              <div class="swatch-hex">#181B1F</div>
+              <div class="swatch-role">Cards &amp; panels</div>
+            </div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-color" style="background:#262B31;"></div>
+            <div class="swatch-meta">
+              <div class="swatch-name">Bolt</div>
+              <div class="swatch-hex">#262B31</div>
+              <div class="swatch-role">Borders &amp; dividers</div>
+            </div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-color" style="background:#8B949E;"></div>
+            <div class="swatch-meta">
+              <div class="swatch-name">Primer</div>
+              <div class="swatch-hex">#8B949E</div>
+              <div class="swatch-role">Secondary metadata</div>
+            </div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-color" style="background:#F6F4EE;"></div>
+            <div class="swatch-meta">
+              <div class="swatch-name">Stencil</div>
+              <div class="swatch-hex">#F6F4EE</div>
+              <div class="swatch-role">Light paper surface</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="swatch-row four">
+          <div class="swatch">
+            <div class="swatch-color" style="background:#F5B700;"></div>
+            <div class="swatch-meta">
+              <div class="swatch-name">Safety Yellow</div>
+              <div class="swatch-hex">#F5B700</div>
+              <div class="swatch-role">Brand mark &amp; CTAs</div>
+            </div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-color" style="background:#D97706;"></div>
+            <div class="swatch-meta">
+              <div class="swatch-name">Caution</div>
+              <div class="swatch-hex">#D97706</div>
+              <div class="swatch-role">Hook conflicts / review</div>
+            </div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-color" style="background:#22C55E;"></div>
+            <div class="swatch-meta">
+              <div class="swatch-name">Signal Green</div>
+              <div class="swatch-hex">#22C55E</div>
+              <div class="swatch-role">Clean sync &amp; checks</div>
+            </div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-color" style="background:#EF4444;"></div>
+            <div class="swatch-meta">
+              <div class="swatch-name">Redline</div>
+              <div class="swatch-hex">#EF4444</div>
+              <div class="swatch-role">Brand leak / failure</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 03 / Product Application: Automated Sync PR + forklift.yaml -->
+    <div class="section">
+      <div class="section-label">
+        <span>03 / Product Application</span>
+        <span>Automated Sync PR + Manifest</span>
+      </div>
+
+      <div class="product-grid">
+        <div class="pr-card">
+          <div class="pr-top">
+            <div class="pr-title-wrap">
+              <span class="bot-badge">forklift</span>
+              <span class="pr-title">Sync upstream → v0.1.14 (bonfire)</span>
+            </div>
+            <span class="ready-pill">Ready to merge</span>
+          </div>
+
+          <div class="pr-stats">
+            <div class="stat-cell">
+              <div class="stat-num" style="color:#f3f4f6;">142</div>
+              <div class="stat-lbl">Clean commits</div>
+            </div>
+            <div class="stat-cell">
+              <div class="stat-num" style="color:#f5b700;">5</div>
+              <div class="stat-lbl">Hooks lifted</div>
+            </div>
+            <div class="stat-cell">
+              <div class="stat-num" style="color:#4ade80;">2</div>
+              <div class="stat-lbl">Leaks patched</div>
+            </div>
+            <div class="stat-cell">
+              <div class="stat-num" style="color:#4ade80;">0</div>
+              <div class="stat-lbl">Test errors</div>
+            </div>
+          </div>
+
+          <div class="pr-rows">
+            <div class="pr-row">
+              <span class="pr-path">apps/web/src/bonfire/skills/*</span>
+              <span class="tag tag-blue">Owned · Untouched</span>
+            </div>
+            <div class="pr-row">
+              <span class="pr-path">apps/web/src/Sidebar.tsx</span>
+              <span class="tag tag-yellow">Hook Re-applied</span>
+            </div>
+            <div class="pr-row">
+              <span class="pr-path">apps/web/src/i18n/en.json</span>
+              <span class="tag tag-green">2 Brand Leaks Fixed</span>
+            </div>
+            <div class="pr-row">
+              <span class="pr-path">pnpm-lock.yaml</span>
+              <span class="tag tag-green">Regenerated</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="yaml-card">
+          <div class="yaml-head">
+            <span>forklift.yaml</span>
+            <span>v1</span>
+          </div>
+          <div class="yaml-body"><span class="yk">upstream:</span> <span class="ys">pingdotgg/t3code</span>
+<span class="yk">schedule:</span> <span class="ys">weekly</span>
+
+<span class="yk">owned:</span>
+  - <span class="ys">apps/**/bonfire/**</span>
+  - <span class="ys">BONFIRE.md</span>
+
+<span class="yk">brandGuard:</span>
+  <span class="yk">forbid:</span> [<span class="ys">"T3 Code"</span>, <span class="ys">"t3.codes"</span>]
+  <span class="yk">allow:</span>  [<span class="ys">"LICENSE"</span>]
+
+<span class="yk">verify:</span>
+  - <span class="ys">pnpm typecheck</span>
+  - <span class="ys">pnpm test</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 04 / Typography & Voice -->
+    <div class="section">
+      <div class="section-label">
+        <span>04 / Typography &amp; Voice</span>
+        <span>Blunt, Mechanical, Dependable</span>
+      </div>
+
+      <div class="two-col">
+        <div>
+          <div class="type-row">
+            <div class="type-display">Heavy lifting for your forks.</div>
+            <div class="type-note">Space Grotesk / Inter<br>Display &amp; Headlines</div>
+          </div>
+          <div class="type-row">
+            <div class="type-ui">5 hooks lifted cleanly onto v0.1.14</div>
+            <div class="type-note">Inter / Geist Sans<br>PR Reports &amp; UI</div>
+          </div>
+          <div class="type-row">
+            <div class="type-mono">forklift sync --upstream v0.1.14</div>
+            <div class="type-note">JetBrains Mono<br>CLI, SHAs &amp; YAML</div>
+          </div>
+        </div>
+
+        <div class="voice-list">
+          <div class="voice-item">
+            <strong>CLI status copy</strong>
+            "Lifting 48 commits from upstream… 3 hooks re-applied, 0 brand leaks."
+          </div>
+          <div class="voice-item">
+            <strong>Brand personality</strong>
+            Industrial Braun / Teenage Engineering restraint—never cartoonish construction clipart. Use hazard stripes only as a subtle 4px accent bar.
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>
