@@ -1,0 +1,80 @@
+version: 1
+
+upstream:
+  repo: pingdotgg/t3code
+  ref: main
+  remote: upstream
+  strategy: squash
+
+sync:
+  schedule: daily
+  branch_prefix: forklift/sync/
+  pr:
+    title: "[Forklift] Sync upstream → {{target}}"
+    labels: [forklift, upstream-sync]
+    draft_on_issue: true
+
+paths:
+  owned:
+    - forklift.yaml
+    - forklift.lock
+    - README.md
+    - assets/**
+    - packages/bonfire-*/**
+    - .github/workflows/bonfire-*.yml
+
+  dropped:
+    - apps/marketing/**
+    - .github/workflows/**
+    - .coderabbit.config.ts
+
+  generated:
+    - paths: [pnpm-lock.yaml]
+      run: pnpm install --no-frozen-lockfile
+      triggers: ["**/package.json", "pnpm-workspace.yaml"]
+    - paths: [third-party-licenses/**]
+      run: pnpm licenses:sync
+
+hooks:
+  - id: desktop-identity
+    paths:
+      - apps/web/index.html
+      - apps/desktop/electron-builder.yml
+    intent: >
+      Preserve Bonfire product name, window title, bundle ID (com.bonfire.desktop),
+      and icon paths while accepting upstream bundler and build configuration changes.
+    review: auto
+
+guardrails:
+  touchpoints:
+    mode: warn
+
+  brand_leaks:
+    exclude:
+      - "**/*.test.*"
+      - pnpm-lock.yaml
+      - third-party-licenses/**
+      - forklift.yaml
+      - forklift.lock
+    rules:
+      - id: upstream-product-name
+        literal: "T3 Code"
+        replace: "Bonfire"
+        include: ["apps/web/**", "apps/desktop/**", "apps/mobile/**"]
+        mode: autofix
+
+      - id: upstream-domains
+        match: "t3\\.codes|ping\\.gg"
+        include: ["apps/**"]
+        mode: error
+
+verify:
+  - name: typecheck
+    run: pnpm tc
+    agent_fix: true
+  - name: lint
+    run: pnpm lint
+    agent_fix: true
+  - name: tests
+    run: pnpm test:cached
+    agent_fix: false

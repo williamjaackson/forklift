@@ -1,0 +1,89 @@
+name: "Forklift"
+description: "Intent-aware upstream sync and deterministic guardrails for forked repositories"
+branding:
+  icon: "git-pull-request"
+  color: "yellow"
+
+inputs:
+  mode:
+    description: "Action mode: 'check' (guardrails on PRs) or 'sync' (automated Sync PR)"
+    required: false
+    default: "check"
+  fix:
+    description: "Auto-fix safe brand leaks when mode is 'check'"
+    required: false
+    default: "false"
+  create-pr:
+    description: "Open or update a Sync PR when mode is 'sync'"
+    required: false
+    default: "true"
+  ai-provider:
+    description: "AI provider override: anthropic | openai | claude | codex"
+    required: false
+    default: ""
+  ai-model:
+    description: "AI model override"
+    required: false
+    default: ""
+  node-version:
+    description: "Node.js version to install"
+    required: false
+    default: "22"
+  working-directory:
+    description: "Repository directory containing forklift.yaml"
+    required: false
+    default: "."
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+
+    - name: Build Forklift CLI
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        pnpm install --frozen-lockfile || pnpm install
+        pnpm build
+
+    - name: Configure git identity for Forklift
+      if: inputs.mode == 'sync'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        git config user.name "forklift[bot]"
+        git config user.email "forklift[bot]@users.noreply.github.com"
+
+    - name: Run Forklift check
+      if: inputs.mode == 'check'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        FIX_FLAG=""
+        if [ "${{ inputs.fix }}" = "true" ]; then
+          FIX_FLAG="--fix"
+        fi
+        node "${{ github.action_path }}/packages/cli/dist/bin.js" check $FIX_FLAG
+
+    - name: Run Forklift sync
+      if: inputs.mode == 'sync'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        ARGS=()
+        if [ "${{ inputs.create-pr }}" = "true" ]; then
+          ARGS+=(--pr)
+        fi
+        if [ -n "${{ inputs.ai-provider }}" ]; then
+          ARGS+=(--ai "${{ inputs.ai-provider }}")
+        fi
+        if [ -n "${{ inputs.ai-model }}" ]; then
+          ARGS+=(--model "${{ inputs.ai-model }}")
+        fi
+        node "${{ github.action_path }}/packages/cli/dist/bin.js" sync "${ARGS[@]}"
