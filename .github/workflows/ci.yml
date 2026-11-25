@@ -25,6 +25,18 @@ jobs:
       - run: pnpm test
       - run: pnpm bundle && node dist/forklift.cjs --version
 
+  test-image-git:
+    # The same tests against the git the container image ships (Debian's),
+    # which is older than the one on the runners.
+    runs-on: ubuntu-latest
+    container: node:26-bookworm-slim
+    steps:
+      - run: apt-get update && apt-get install -y --no-install-recommends ca-certificates git
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: npm install --global --no-fund --no-audit pnpm@12.21.0
+      - run: pnpm install --frozen-lockfile
+      - run: git --version && pnpm build && pnpm test
+
   image:
     # Proves the image builds; publishing happens in image.yml on main.
     if: github.event_name == 'pull_request'
