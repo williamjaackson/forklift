@@ -7,6 +7,9 @@
 #            It holds the credentials, and runs no code from the fork.
 #
 # A build reaches the publisher as one file in the shared `handoff` volume.
+# Both containers run as the same user here, which is what lets each read
+# what the other leaves; if you give them different users, grant that access
+# on the shared volumes yourself.
 #
 #   cp deploy/forklift.env.example forklift.env   # fill it in
 #   docker compose -f deploy/compose.yaml --env-file forklift.env up -d

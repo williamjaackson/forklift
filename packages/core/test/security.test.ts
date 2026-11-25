@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { appJwt, credentialArgs, issueReadAccess, resolveCredentials } from "../src/auth.js";
+import { appJwt, credentialArgs, issueReadAccess, resolveCredentials, writeAccessToken } from "../src/auth.js";
 import { agentEnv, buildEnv } from "../src/exec.js";
 import { loadContext } from "../src/context.js";
 import { git } from "../src/git.js";
@@ -272,6 +272,11 @@ describe("acting as a GitHub App", () => {
       expect(await resolveCredentials("owner/other")).toMatchObject({ kind: "ambient", token: undefined });
       // Without an App's key there is nothing to issue.
       expect(await issueReadAccess("owner/fork", dir)).toBe(false);
+      // What a publisher writes is for its own user and group only.
+      await writeAccessToken(dir, "owner/issued", "ghs_issued");
+      const stat = await fs.stat(path.join(dir, "owner__issued.token"));
+      expect(stat.mode & 0o777).toBe(0o640);
+      expect(await resolveCredentials("owner/issued")).toMatchObject({ token: "ghs_issued" });
       // The agent and the fork's commands are not pointed at the directory.
       expect(agentEnv().FORKLIFT_ACCESS).toBeUndefined();
       expect(buildEnv().FORKLIFT_ACCESS).toBeUndefined();

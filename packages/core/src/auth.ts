@@ -126,12 +126,24 @@ export async function issueReadAccess(slug: string, dir: string): Promise<boolea
   const key = appId ? await appPrivateKey() : null;
   if (!appId || !key) return false;
   const { token } = await installationToken(appId, key, slug, { contents: "read" });
-  const file = accessFile(dir, slug);
-  await fs.mkdir(dir, { recursive: true });
-  // Renamed into place, so a reader never sees half a token.
-  await fs.writeFile(`${file}.tmp`, token, { mode: 0o644 });
-  await fs.rename(`${file}.tmp`, file);
+  await writeAccessToken(dir, slug, token);
   return true;
+}
+
+/**
+ * Readable by this user and this group, and by nobody else. A builder that
+ * runs as another user has to be let in on purpose: by sharing the group, or
+ * with an access-control entry on the directory.
+ */
+export async function writeAccessToken(dir: string, slug: string, token: string): Promise<void> {
+  const file = accessFile(dir, slug);
+  await fs.mkdir(dir, { recursive: true, mode: 0o750 });
+  const tmp = `${file}.tmp-${process.pid}`;
+  await fs.rm(tmp, { force: true });
+  // Created new, never opened through something already sitting at this name.
+  await fs.writeFile(tmp, token, { mode: 0o640, flag: "wx" });
+  // Renamed into place, so a reader never sees half a token.
+  await fs.rename(tmp, file);
 }
 
 /** Work out how to act on `slug` ("owner/repo", or null when the fork is not on GitHub). */
