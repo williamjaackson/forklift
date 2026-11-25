@@ -1,0 +1,63 @@
+# A complete forklift.yaml. Only `upstream` is required.
+
+# The project this is a fork of: owner/repo on GitHub, or any git URL.
+upstream: pingdotgg/t3code
+# upstream: { url: https://example.com/project.git, branch: develop }
+
+# Paths that must not exist in this fork. Upstream's changes to them are
+# ignored, and files upstream adds under them are removed.
+drop:
+  - .github/workflows/**
+  - apps/marketing/**
+
+# Files this fork owns. Upstream's changes to them are never taken.
+ours:
+  - README.md
+  - assets/**
+
+# Files that are rebuilt rather than merged. When one conflicts, Forklift
+# takes upstream's copy and runs the command. The command may change only the
+# files it is listed for, and a merge with a regenerated file goes to review.
+regenerate:
+  pnpm-lock.yaml: pnpm install --lockfile-only
+
+# Text upstream must not bring into this fork. With `replace`, Forklift
+# rewrites it; without, the agent is asked to fix it and the merge is held
+# for review if it cannot.
+forbid:
+  - pattern: 'T3 Code'
+    in: [apps/web/**, apps/desktop/**]
+    replace: Bonfire
+  - pattern: 't3\.codes|ping\.gg'
+    in: apps/**
+    message: Bonfire must not point users at upstream's hosted services.
+
+# Commands that must pass before a merge lands. They run in Forklift's own
+# checkout, without your credentials in their environment, and anything they
+# change is undone. Start with whatever installs dependencies.
+verify:
+  - pnpm install --frozen-lockfile
+  - name: typecheck
+    run: pnpm tc
+
+# The coding agent that resolves what the rules cannot. `claude` and `codex`
+# are built in. Any other command works if it reads its task on stdin and
+# edits files in the current directory.
+agent: claude
+# agent: { run: claude, timeout: 30m, attempts: 2 }
+
+# What the agent should know: what this fork is, what it changes on purpose,
+# and what must survive every merge.
+notes: |
+  Bonfire is a rebrand of T3 Code. Anywhere the product name is shown to a
+  user it must say "Bonfire". Identifiers, package names and file paths keep
+  upstream's naming so merges stay small.
+
+# How merges land. `push` goes straight onto the branch; `pr` opens a pull
+# request. Shown here with the defaults.
+land:
+  clean: push      # nothing but git's own merge and your rules; every check passed
+  resolved: pr     # something was a judgement call: the agent's, or a regenerated file
+
+# How long to leave a sync that did not go through before trying it again.
+retry_after: 12h

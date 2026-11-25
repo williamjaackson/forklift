@@ -1,149 +1,65 @@
-import { loadLock, loadManifest } from "./config.js";
-import {
-  countCommits,
-  diffNameStatus,
-  ensureUpstreamRemote,
-  fetchUpstream,
-  logOneline,
-  readBlob,
-  tryRevParse,
-} from "./git.js";
-import { createPolicyClassifier } from "./policy.js";
-import type { HookConfig } from "./schema.js";
+import { loadContext, type ContextOptions } from "./context.js";
+import { countCommits, git, splitNul } from "./git.js";
+import { findBlocker, predict, type Blocker, type Prediction } from "./plan.js";
 
-export interface AffectedHookStatus {
-  hook: HookConfig;
-  files: string[];
-  missingAnchors: Array<{ file: string; anchor: string }>;
+export interface StatusResult {
+  branch: string;
+  fork: string;
+  upstream: { name: string; branch: string; commit: string };
+  base: string;
+  /** Upstream commits the fork does not have. */
+  behind: number;
+  /** Fork commits upstream does not have. */
+  ahead: number;
+  /** Files the fork has changed, added or deleted relative to upstream. */
+  forkFiles: number;
+  /** What merging upstream now would hit. */
+  prediction: Prediction;
+  /** The first upstream commit that needs an agent or a person, if any. */
+  blocker: Blocker | null;
+  /**
+   * Files the fork has changed that upstream keeps changing too: where this
+   * fork's conflicts come from. Most upstream activity first.
+   */
+  hotFiles: { path: string; upstreamCommits: number }[];
 }
 
-export interface StatusReport {
-  upstreamRepo: string;
-  upstreamRef: string;
-  lastSyncedSha: string;
-  targetSha: string;
-  commitsBehind: number;
-  recentCommits: string[];
-  counts: {
-    upstream: number;
-    hooks: number;
-    owned: number;
-    dropped: number;
-    generated: number;
-  };
-  affectedHooks: AffectedHookStatus[];
-}
+export async function runStatus(options: ContextOptions): Promise<StatusResult> {
+  const ctx = await loadContext(options);
+  const cwd = ctx.repo.root;
 
-export interface StatusOptions {
-  cwd: string;
-  fetch?: boolean;
-  targetRef?: string;
-}
+  const forkChanged = new Set(
+    splitNul((await git(cwd, ["diff", "--no-renames", "--name-only", "-z", ctx.base, ctx.fork])).stdout),
+  );
 
-export async function runStatus(options: StatusOptions): Promise<StatusReport> {
-  const { cwd, fetch = true } = options;
-  const manifest = await loadManifest(cwd);
-  const lock = await loadLock(cwd);
-  const { remote, repo, ref } = manifest.upstream;
-
-  let targetSha: string;
-  if (options.targetRef) {
-    const resolved = await tryRevParse(cwd, options.targetRef);
-    if (!resolved) {
-      throw new Error(`Could not resolve target ref "${options.targetRef}".`);
-    }
-    targetSha = resolved;
-  } else if (fetch) {
-    await ensureUpstreamRemote(cwd, remote, repo);
-    targetSha = await fetchUpstream(cwd, remote, ref);
-  } else {
-    const resolved = await tryRevParse(cwd, `${remote}/${ref}`);
-    if (!resolved) {
-      throw new Error(
-        `Upstream ref "${remote}/${ref}" not found locally. Run without --no-fetch.`,
-      );
-    }
-    targetSha = resolved;
-  }
-
-  const baseSha = lock.upstream.sha;
-  if (baseSha === targetSha) {
-    return {
-      upstreamRepo: repo,
-      upstreamRef: ref,
-      lastSyncedSha: baseSha,
-      targetSha,
-      commitsBehind: 0,
-      recentCommits: [],
-      counts: { upstream: 0, hooks: 0, owned: 0, dropped: 0, generated: 0 },
-      affectedHooks: [],
-    };
-  }
-
-  const [commitsBehind, recentCommits, diffs] = await Promise.all([
-    countCommits(cwd, baseSha, targetSha),
-    logOneline(cwd, baseSha, targetSha, { limit: 10 }),
-    diffNameStatus(cwd, baseSha, targetSha),
-  ]);
-
-  const classifier = createPolicyClassifier(manifest);
-  const counts = { upstream: 0, hooks: 0, owned: 0, dropped: 0, generated: 0 };
-  const hookFilesMap = new Map<string, { hook: HookConfig; files: string[] }>();
-
-  for (const entry of diffs) {
-    const cls = classifier.classify(entry.path);
-    switch (cls.kind) {
-      case "hook":
-        counts.hooks++;
-        for (const hook of cls.hooks) {
-          const existing = hookFilesMap.get(hook.id);
-          if (existing) {
-            existing.files.push(entry.path);
-          } else {
-            hookFilesMap.set(hook.id, { hook, files: [entry.path] });
-          }
-        }
-        break;
-      case "owned":
-        counts.owned++;
-        break;
-      case "dropped":
-        counts.dropped++;
-        break;
-      case "generated":
-        counts.generated++;
-        break;
-      case "upstream":
-        counts.upstream++;
-        break;
+  const touched = new Map<string, number>();
+  if (ctx.behind > 0 && forkChanged.size > 0) {
+    const { stdout } = await git(cwd, ["log", "--format=", "--name-only", "--no-renames", `${ctx.base}..${ctx.target}`]);
+    for (const file of stdout.split("\n")) {
+      if (file && forkChanged.has(file)) touched.set(file, (touched.get(file) ?? 0) + 1);
     }
   }
+  const hotFiles = [...touched.entries()]
+    .filter(([file]) => ctx.rules.ruleFor(file) === null)
+    .map(([file, upstreamCommits]) => ({ path: file, upstreamCommits }))
+    .sort((a, b) => b.upstreamCommits - a.upstreamCommits || a.path.localeCompare(b.path))
+    .slice(0, 15);
 
-  const affectedHooks: AffectedHookStatus[] = [];
-  for (const { hook, files } of hookFilesMap.values()) {
-    const missingAnchors: Array<{ file: string; anchor: string }> = [];
-    if (hook.anchors && hook.anchors.length > 0) {
-      for (const file of files) {
-        const blob = await readBlob(cwd, targetSha, file);
-        const text = blob ? blob.toString("utf8") : "";
-        for (const anchor of hook.anchors) {
-          if (!text.includes(anchor)) {
-            missingAnchors.push({ file, anchor });
-          }
-        }
-      }
-    }
-    affectedHooks.push({ hook, files, missingAnchors });
-  }
+  const prediction =
+    ctx.behind > 0
+      ? await predict(cwd, ctx.fork, ctx.target, ctx.rules)
+      : { byRule: { drop: [], regenerate: [], ours: [] }, open: [] };
 
   return {
-    upstreamRepo: repo,
-    upstreamRef: ref,
-    lastSyncedSha: baseSha,
-    targetSha,
-    commitsBehind,
-    recentCommits,
-    counts,
-    affectedHooks,
+    branch: ctx.branch,
+    fork: ctx.fork,
+    upstream: { name: ctx.upstream.name, branch: ctx.upstream.branch, commit: ctx.target },
+    base: ctx.base,
+    behind: ctx.behind,
+    ahead: await countCommits(cwd, `${ctx.target}..${ctx.fork}`),
+    forkFiles: forkChanged.size,
+    prediction,
+    blocker: prediction.open.length > 0 ? await findBlocker(cwd, ctx.fork, ctx.target, ctx.rules) : null,
+    hotFiles,
   };
 }

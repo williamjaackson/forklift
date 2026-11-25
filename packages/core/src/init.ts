@@ -1,236 +1,147 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import {
-  LOCK_FILENAME,
-  MANIFEST_FILENAME,
-  lockPath,
-  manifestPath,
-  saveLock,
-  saveManifest,
-} from "./config.js";
-import {
-  diffNameStatus,
-  ensureUpstreamRemote,
-  getRemoteUrl,
-  isGitRepo,
-  revParse,
-  runGit,
-  tryRevParse,
-  urlToRepoSlug,
-} from "./git.js";
-import { ForkliftManifestSchema, type ForkliftLock, type ForkliftManifest } from "./schema.js";
+import { CONFIG_FILENAME, githubSlug } from "./config.js";
+import { run } from "./exec.js";
+import { git, mergeBase, openRepo, remoteUrl, splitNul, tryRevParse } from "./git.js";
 
 export interface InitOptions {
   cwd: string;
+  /** Upstream as "owner/repo" or a git URL. Default: the `upstream` remote. */
   upstream?: string;
-  ref?: string;
-  remote?: string;
-  strategy?: "squash" | "merge";
+  upstreamBranch?: string;
   force?: boolean;
 }
 
 export interface InitResult {
-  manifest: ForkliftManifest;
-  lock: ForkliftLock;
-  detectedOwned: string[];
-  detectedDropped: string[];
-  detectedHooks: string[];
-  detectedGenerated: string[];
+  file: string;
+  upstream: string;
+  drop: string[];
+  regenerate: Record<string, string>;
+  agent: string | null;
 }
 
-async function fileExists(p: string): Promise<boolean> {
+const LOCKFILES: Record<string, string> = {
+  "pnpm-lock.yaml": "pnpm install --lockfile-only",
+  "package-lock.json": "npm install --package-lock-only",
+  "yarn.lock": "yarn install --mode update-lockfile",
+  "bun.lock": "bun install --lockfile-only",
+  "Cargo.lock": "cargo update --workspace",
+  "go.sum": "go mod tidy",
+  "poetry.lock": "poetry lock",
+  "uv.lock": "uv lock",
+  "Gemfile.lock": "bundle lock",
+};
+
+/**
+ * Paths the fork has deleted since it split from upstream, folded into whole
+ * directories where the fork removed all of one.
+ */
+async function deletedSinceFork(cwd: string, base: string): Promise<string[]> {
+  const deleted = splitNul(
+    (await git(cwd, ["diff", "--no-renames", "--name-only", "-z", "--diff-filter=D", base, "HEAD"])).stdout,
+  );
+  if (deleted.length === 0) return [];
+  const liveDirs = new Set<string>([""]);
+  for (const file of splitNul((await git(cwd, ["ls-tree", "-r", "-z", "--name-only", "HEAD"])).stdout)) {
+    let dir = path.posix.dirname(file);
+    while (dir !== "." && !liveDirs.has(dir)) {
+      liveDirs.add(dir);
+      dir = path.posix.dirname(dir);
+    }
+  }
+  const globs = new Set<string>();
+  for (const file of deleted) {
+    // Climb to the highest directory that no longer exists in the fork.
+    let gone: string | null = null;
+    let dir = path.posix.dirname(file);
+    while (dir !== "." && !liveDirs.has(dir)) {
+      gone = dir;
+      dir = path.posix.dirname(dir);
+    }
+    globs.add(gone ? `${gone}/**` : file);
+  }
+  return [...globs].sort();
+}
+
+async function onPath(program: string): Promise<boolean> {
   try {
-    await fs.access(p);
-    return true;
+    return (await run("sh", ["-c", `command -v ${program}`], { cwd: process.cwd() })).code === 0;
   } catch {
     return false;
   }
 }
 
+function yamlList(items: string[], indent = "  "): string {
+  return items.map((item) => `${indent}- ${JSON.stringify(item)}`).join("\n");
+}
+
 export async function runInit(options: InitOptions): Promise<InitResult> {
-  const {
-    cwd,
-    ref = "main",
-    remote = "upstream",
-    strategy = "squash",
-    force = false,
-  } = options;
-
-  if (!(await isGitRepo(cwd))) {
-    throw new Error(`${cwd} is not a git repository.`);
+  const repo = await openRepo(options.cwd);
+  const file = path.join(repo.root, CONFIG_FILENAME);
+  if (!options.force) {
+    const exists = await fs.stat(file).then(() => true, () => false);
+    if (exists) throw new Error(`${CONFIG_FILENAME} already exists. Use --force to replace it.`);
   }
 
-  if (!force && (await fileExists(manifestPath(cwd)))) {
-    throw new Error(
-      `${MANIFEST_FILENAME} already exists. Pass --force to overwrite.`,
-    );
+  const url = options.upstream ?? (await remoteUrl(repo.root, "upstream"));
+  if (!url) {
+    throw new Error("Which project is this a fork of? Pass --upstream owner/repo (or add a git remote named `upstream`).");
+  }
+  const upstream = githubSlug(url) ?? url;
+  const branch = options.upstreamBranch ?? "main";
+
+  let drop: string[] = [];
+  const upstreamTip = await tryRevParse(repo.root, `refs/remotes/upstream/${branch}`);
+  if (upstreamTip) {
+    const base = await mergeBase(repo.root, "HEAD", upstreamTip);
+    if (base) drop = await deletedSinceFork(repo.root, base);
   }
 
-  let upstreamRepo = options.upstream;
-  if (!upstreamRepo) {
-    const remoteUrl = await getRemoteUrl(cwd, remote);
-    if (!remoteUrl) {
-      throw new Error(
-        `Could not detect "${remote}" git remote. Pass --upstream <owner/repo>.`,
-      );
-    }
-    upstreamRepo = urlToRepoSlug(remoteUrl);
-  } else {
-    await ensureUpstreamRemote(cwd, remote, upstreamRepo);
+  const regenerate: Record<string, string> = {};
+  for (const [lockfile, command] of Object.entries(LOCKFILES)) {
+    const tracked = await git(repo.root, ["ls-files", "--error-unmatch", lockfile], { allowFailure: true });
+    if (tracked.code === 0) regenerate[lockfile] = command;
   }
 
-  // Determine base upstream SHA
-  const upstreamRef = `${remote}/${ref}`;
-  let baseSha: string | null = null;
-  if (await tryRevParse(cwd, upstreamRef)) {
-    const mb = await runGit(cwd, ["merge-base", "HEAD", upstreamRef], {
-      allowFailure: true,
-    });
-    baseSha =
-      mb.exitCode === 0 && mb.stdout.trim()
-        ? mb.stdout.trim()
-        : await revParse(cwd, upstreamRef);
-  } else {
-    baseSha = await revParse(cwd, "HEAD");
-  }
+  const agent = (await onPath("claude")) ? "claude" : (await onPath("codex")) ? "codex" : null;
 
-  // Inspect existing fork divergence from baseSha
-  const detectedOwned: string[] = [MANIFEST_FILENAME, LOCK_FILENAME];
-  const detectedDropped: string[] = [];
-  const detectedHooks: string[] = [];
-  const detectedGenerated: Array<{ paths: string[]; run: string; triggers?: string[] }> = [];
+  const content = [
+    "# Forklift keeps this fork up to date with upstream.",
+    "# https://github.com/williamjaackson/forklift",
+    "",
+    branch === "main" ? `upstream: ${upstream}` : `upstream:\n  url: ${upstream}\n  branch: ${branch}`,
+    "",
+    "# Paths that must not exist in this fork. Upstream's changes to them are",
+    "# ignored, and files upstream adds under them are removed.",
+    drop.length > 0 ? `drop:\n${yamlList(drop)}` : "# drop:\n#   - .github/workflows/**",
+    "",
+    "# Files this fork owns. Upstream's changes to them are never taken.",
+    "# ours:\n#   - README.md",
+    "",
+    "# Files that are rebuilt rather than merged, and the command that rebuilds them.",
+    Object.keys(regenerate).length > 0
+      ? `regenerate:\n${Object.entries(regenerate).map(([p, c]) => `  ${p}: ${c}`).join("\n")}`
+      : "# regenerate:\n#   pnpm-lock.yaml: pnpm install --lockfile-only",
+    "",
+    "# Text upstream must not bring into this fork. Add `replace` to have",
+    "# Forklift rewrite it; without one, the agent is asked to fix it.",
+    "# forbid:\n#   - pattern: 'Upstream Product Name'\n#     in: apps/**\n#     replace: 'My Product Name'",
+    "",
+    "# Commands that must pass before a merge lands. They run in Forklift's own",
+    "# checkout, so start with whatever installs dependencies.",
+    "# verify:\n#   - npm ci\n#   - npm test",
+    "",
+    "# The coding agent that resolves conflicts the rules above cannot.",
+    "# `claude` and `codex` are built in; any command that reads its task on",
+    "# stdin and edits files in the current directory works.",
+    agent ? `agent: ${agent}` : "# agent: claude",
+    "",
+    "# What the agent should know about this fork: what it is, what it changes",
+    "# on purpose, and what must survive every merge.",
+    "# notes: |\n#   This fork renames the product and removes the hosted features.",
+    "",
+  ].join("\n");
 
-  if (await fileExists(path.join(cwd, "pnpm-lock.yaml"))) {
-    detectedGenerated.push({
-      paths: ["pnpm-lock.yaml"],
-      run: "pnpm install --no-frozen-lockfile",
-      triggers: ["**/package.json", "pnpm-workspace.yaml"],
-    });
-  } else if (await fileExists(path.join(cwd, "package-lock.json"))) {
-    detectedGenerated.push({
-      paths: ["package-lock.json"],
-      run: "npm install --package-lock-only",
-      triggers: ["**/package.json"],
-    });
-  } else if (await fileExists(path.join(cwd, "yarn.lock"))) {
-    detectedGenerated.push({
-      paths: ["yarn.lock"],
-      run: "yarn install",
-      triggers: ["**/package.json"],
-    });
-  }
-
-  const headSha = await revParse(cwd, "HEAD");
-  if (baseSha !== headSha) {
-    const diffs = await diffNameStatus(cwd, baseSha, "HEAD");
-    for (const entry of diffs) {
-      if (entry.path === MANIFEST_FILENAME || entry.path === LOCK_FILENAME) continue;
-      if (detectedGenerated.some((g) => g.paths.includes(entry.path))) continue;
-      if (entry.status === "A") {
-        detectedOwned.push(entry.path);
-      } else if (entry.status === "D") {
-        detectedDropped.push(entry.path);
-      } else if (entry.status === "M") {
-        detectedHooks.push(entry.path);
-      }
-    }
-  }
-
-  // Detect default verify scripts from package.json if present
-  const verify: Array<{ name: string; run: string; agent_fix: boolean }> = [];
-  const pkgPath = path.join(cwd, "package.json");
-  if (await fileExists(pkgPath)) {
-    try {
-      const pkg = JSON.parse(await fs.readFile(pkgPath, "utf8")) as {
-        scripts?: Record<string, string>;
-      };
-      const pm = (await fileExists(path.join(cwd, "pnpm-lock.yaml")))
-        ? "pnpm"
-        : "npm run";
-      if (pkg.scripts?.typecheck) {
-        verify.push({ name: "typecheck", run: `${pm} typecheck`, agent_fix: true });
-      }
-      if (pkg.scripts?.lint) {
-        verify.push({ name: "lint", run: `${pm} lint`, agent_fix: true });
-      }
-      if (pkg.scripts?.test) {
-        verify.push({ name: "test", run: `${pm} test`, agent_fix: false });
-      }
-    } catch {
-      // Ignore malformed package.json
-    }
-  }
-
-  const hooks = detectedHooks.slice(0, 20).map((filePath, idx) => ({
-    id: `hook-${idx + 1}-${path
-      .basename(filePath, path.extname(filePath))
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "") || "file"}`,
-    paths: [filePath],
-    intent: `Preserve fork customizations in ${filePath} while accepting upstream updates.`,
-    review: "auto" as const,
-  }));
-
-  const manifest = ForkliftManifestSchema.parse({
-    version: 1,
-    upstream: {
-      repo: upstreamRepo,
-      ref,
-      remote,
-      strategy,
-    },
-    sync: {
-      schedule: "daily",
-      branch_prefix: "forklift/sync/",
-      pr: {
-        title: "[Forklift] Sync upstream → {{target}}",
-        labels: ["forklift", "upstream-sync"],
-        draft_on_issue: true,
-      },
-    },
-    paths: {
-      owned: detectedOwned,
-      dropped: detectedDropped,
-      generated: detectedGenerated,
-    },
-    hooks,
-    guardrails: {
-      touchpoints: { mode: "warn" },
-      brand_leaks: {
-        exclude: [
-          MANIFEST_FILENAME,
-          LOCK_FILENAME,
-          "**/*.lock",
-          "pnpm-lock.yaml",
-          "package-lock.json",
-          "yarn.lock",
-        ],
-        rules: [],
-      },
-    },
-    verify,
-  });
-
-  const lock: ForkliftLock = {
-    version: 1,
-    upstream: {
-      repo: upstreamRepo,
-      ref,
-      sha: baseSha,
-      synced_at: new Date().toISOString(),
-    },
-  };
-
-  await saveManifest(cwd, manifest);
-  await saveLock(cwd, lock);
-
-  return {
-    manifest,
-    lock,
-    detectedOwned,
-    detectedDropped,
-    detectedHooks,
-    detectedGenerated: detectedGenerated.flatMap((g) => g.paths),
-  };
+  await fs.writeFile(file, content, "utf8");
+  return { file, upstream, drop, regenerate, agent };
 }

@@ -1,89 +1,49 @@
 name: "Forklift"
-description: "Intent-aware upstream sync and deterministic guardrails for forked repositories"
+description: "Keep a fork up to date with its upstream: rules, an agent for the conflicts, and checks before anything lands"
 branding:
   icon: "git-pull-request"
   color: "yellow"
 
 inputs:
-  mode:
-    description: "Action mode: 'check' (guardrails on PRs) or 'sync' (automated Sync PR)"
+  command:
+    description: "`build`, `publish`, `sync` (both at once) or `check`"
     required: false
-    default: "check"
-  fix:
-    description: "Auto-fix safe brand leaks when mode is 'check'"
-    required: false
-    default: "false"
-  create-pr:
-    description: "Open or update a Sync PR when mode is 'sync'"
-    required: false
-    default: "true"
-  ai-provider:
-    description: "AI provider override: anthropic | openai | claude | codex"
+    default: "sync"
+  args:
+    description: "Arguments for the command, e.g. `--out forklift.bundle` for build"
     required: false
     default: ""
-  ai-model:
-    description: "AI model override"
+  token:
+    description: "Token for the fork. `build` needs read access at most. `publish` and `sync` need to push and open pull requests: the default token cannot push changes to workflow files, and pull requests it opens do not start other workflows, so pass a GitHub App's credentials (FORKLIFT_APP_ID and FORKLIFT_APP_PRIVATE_KEY in `env`) or a personal access token."
     required: false
-    default: ""
-  node-version:
-    description: "Node.js version to install"
-    required: false
-    default: "22"
+    default: ${{ github.token }}
   working-directory:
-    description: "Repository directory containing forklift.yaml"
+    description: "Directory of the fork's checkout"
     required: false
     default: "."
 
 runs:
   using: "composite"
   steps:
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
-        node-version: ${{ inputs.node-version }}
+        node-version: 24
 
-    - name: Setup pnpm
-      uses: pnpm/action-setup@v4
-
-    - name: Build Forklift CLI
+    - name: Build Forklift
       shell: bash
       working-directory: ${{ github.action_path }}
       run: |
-        pnpm install --frozen-lockfile || pnpm install
-        pnpm build
+        npm install --global --no-fund --no-audit pnpm@12.21.0
+        pnpm install --frozen-lockfile
+        pnpm bundle
 
-    - name: Configure git identity for Forklift
-      if: inputs.mode == 'sync'
+    - name: Run Forklift
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        FORKLIFT_COMMAND: ${{ inputs.command }}
+        FORKLIFT_ARGS: ${{ inputs.args }}
       run: |
-        git config user.name "forklift[bot]"
-        git config user.email "forklift[bot]@users.noreply.github.com"
-
-    - name: Run Forklift check
-      if: inputs.mode == 'check'
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}
-      run: |
-        FIX_FLAG=""
-        if [ "${{ inputs.fix }}" = "true" ]; then
-          FIX_FLAG="--fix"
-        fi
-        node "${{ github.action_path }}/packages/cli/dist/bin.js" check $FIX_FLAG
-
-    - name: Run Forklift sync
-      if: inputs.mode == 'sync'
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}
-      run: |
-        ARGS=()
-        if [ "${{ inputs.create-pr }}" = "true" ]; then
-          ARGS+=(--pr)
-        fi
-        if [ -n "${{ inputs.ai-provider }}" ]; then
-          ARGS+=(--ai "${{ inputs.ai-provider }}")
-        fi
-        if [ -n "${{ inputs.ai-model }}" ]; then
-          ARGS+=(--model "${{ inputs.ai-model }}")
-        fi
-        node "${{ github.action_path }}/packages/cli/dist/bin.js" sync "${ARGS[@]}"
+        # shellcheck disable=SC2086
+        node "$GITHUB_ACTION_PATH/dist/forklift.cjs" "$FORKLIFT_COMMAND" $FORKLIFT_ARGS

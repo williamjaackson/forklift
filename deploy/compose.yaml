@@ -1,0 +1,64 @@
+# Forklift on any machine with Docker or Podman, as two containers:
+#
+#   build    merges upstream, runs the agent and the fork's own checks.
+#            It works on code nobody on the fork has reviewed, so it is given
+#            nothing that can push.
+#   publish  checks what build produced and pushes it or opens a pull request.
+#            It holds the credentials, and runs no code from the fork.
+#
+# A build reaches the publisher as one file in the shared `handoff` volume.
+#
+#   cp deploy/forklift.env.example forklift.env   # fill it in
+#   docker compose -f deploy/compose.yaml --env-file forklift.env up -d
+#   docker compose -f deploy/compose.yaml logs -f
+#
+services:
+  build:
+    image: ghcr.io/williamjaackson/forklift:main
+    restart: unless-stopped
+    command: ["watch", "--role", "build"]
+    environment:
+      FORKLIFT_REPOS: ${FORKLIFT_REPOS:?set FORKLIFT_REPOS}
+      FORKLIFT_EVERY: ${FORKLIFT_EVERY:-3h}
+      FORKLIFT_HANDOFF: /handoff
+      # Only for private forks, and read-only: lets the builder fetch the fork.
+      GH_TOKEN: ${FORKLIFT_READ_TOKEN:-}
+      # The agent's credentials: one of these, for `agent: claude`.
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - build-data:/data
+      - handoff:/handoff
+    read_only: true
+    tmpfs:
+      - /tmp:size=1g,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 4096
+
+  publish:
+    image: ghcr.io/williamjaackson/forklift:main
+    restart: unless-stopped
+    command: ["watch", "--role", "publish", "--every", "5m"]
+    environment:
+      FORKLIFT_REPOS: ${FORKLIFT_REPOS:?set FORKLIFT_REPOS}
+      FORKLIFT_HANDOFF: /handoff
+      # Who Forklift acts as. A GitHub App (pull requests come from its bot)…
+      FORKLIFT_APP_ID: ${FORKLIFT_APP_ID:-}
+      FORKLIFT_APP_PRIVATE_KEY: ${FORKLIFT_APP_PRIVATE_KEY:-}
+      # …or a token (pull requests come from the token's owner).
+      GH_TOKEN: ${FORKLIFT_WRITE_TOKEN:-}
+    volumes:
+      - publish-data:/data
+      - handoff:/handoff:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 512
+
+volumes:
+  build-data:
+  publish-data:
+  handoff:

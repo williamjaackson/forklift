@@ -1,38 +1,77 @@
+# .github/workflows/forklift.yml in your fork: sync with upstream every three
+# hours without running a server.
+#
+# Two jobs, on purpose. `build` merges upstream and runs the agent and your
+# checks on code nobody on the fork has reviewed, so it gets a read-only
+# token. `publish` holds the credentials that can push, and runs none of that
+# code: it only checks the result and publishes it.
+#
+# Secrets to add to the fork:
+#   CLAUDE_CODE_OAUTH_TOKEN   from `claude setup-token` (or use ANTHROPIC_API_KEY)
+#   FORKLIFT_APP_ID           a GitHub App installed on this fork, with read/write
+#   FORKLIFT_APP_PRIVATE_KEY  on Contents, Pull requests, Issues and Workflows
 name: Forklift
 
 on:
-  pull_request:
   schedule:
-    - cron: "0 9 * * *" # Daily at 09:00 UTC
+    - cron: "17 */3 * * *"
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
+
+concurrency:
+  group: forklift
+  cancel-in-progress: false
 
 jobs:
-  check:
-    if: github.event_name == 'pull_request'
+  build:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      # Full history: a merge needs the commits the fork and upstream share.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: williamjaackson/forklift@main
-        with:
-          mode: check
+          persist-credentials: false
 
-  sync:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+      - run: npm install --global @anthropic-ai/claude-code
+
+      # Pin to a commit of Forklift you have read, and move it on purpose.
+      - uses: williamjaackson/forklift@<full commit sha>
+        with:
+          command: build
+          args: --out forklift.bundle
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: forklift-build
+          path: forklift.bundle
+          retention-days: 3
+
+  publish:
+    needs: build
     runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: williamjaackson/forklift@main
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          mode: sync
-          create-pr: "true"
+          name: forklift-build
+
+      - uses: williamjaackson/forklift@<full commit sha>
+        with:
+          command: publish
+          args: forklift.bundle
+        env:
+          FORKLIFT_APP_ID: ${{ secrets.FORKLIFT_APP_ID }}
+          FORKLIFT_APP_PRIVATE_KEY: ${{ secrets.FORKLIFT_APP_PRIVATE_KEY }}
