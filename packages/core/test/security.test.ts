@@ -10,6 +10,7 @@ import { git } from "../src/git.js";
 import { readHandoff } from "../src/handoff.js";
 import { publish } from "../src/publish.js";
 import { runBuildOnly, runPublishOnly, runSync } from "../src/sync.js";
+import { ensureClone } from "../src/watch.js";
 import { makeFixture, type Fixture } from "./helpers.js";
 
 let fx: Fixture;
@@ -240,6 +241,33 @@ describe("building and publishing in separate places", () => {
     const again = await runPublishOnly({ cwd: publisher, file: handoff });
     expect(again.outcome).toBe("waiting");
     expect(await fx.remoteHead()).toBe(landed);
+  });
+});
+
+describe("keeping its own clones", () => {
+  it("replaces a clone that was cut short instead of trusting it", async () => {
+    fx = await makeFixture({ "app.txt": "one\n" });
+    const home = path.join(fx.root, "watch-home");
+    const url = `file://${fx.origin}`;
+    const lines: string[] = [];
+
+    const dir = await ensureClone(url, home, (line) => lines.push(line));
+    expect((await git(dir, ["rev-parse", "--abbrev-ref", "HEAD"])).stdout.trim()).toBe("main");
+    expect(lines).toEqual([`cloning ${url}`]);
+
+    // A whole clone is used as it is.
+    await ensureClone(url, home, (line) => lines.push(line));
+    expect(lines).toHaveLength(1);
+
+    // What an interrupted clone leaves: a repository with nothing fetched into it.
+    await fs.rm(dir, { recursive: true, force: true });
+    await git(fx.root, ["init", "--quiet", "--bare", "-b", "master", dir]);
+    await git(dir, ["config", "remote.origin.url", url]);
+    const again = await ensureClone(url, home, (line) => lines.push(line));
+    expect(again).toBe(dir);
+    expect(lines).toHaveLength(2);
+    expect((await git(dir, ["rev-parse", "--abbrev-ref", "HEAD"])).stdout.trim()).toBe("main");
+    expect((await git(dir, ["rev-parse", "HEAD"])).stdout.trim()).toBe(await fx.remoteHead());
   });
 });
 

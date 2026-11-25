@@ -45,6 +45,16 @@ export function forkliftHome(): string {
   );
 }
 
+/** True when `dir` is a complete clone of `url`: it knows its remote, and its branch has a commit. */
+async function usableClone(dir: string, url: string): Promise<boolean> {
+  const exists = await fs.stat(path.join(dir, "HEAD")).then(() => true, () => false);
+  if (!exists) return false;
+  const origin = await git(dir, ["config", "--get", "remote.origin.url"], { allowFailure: true });
+  if (origin.code !== 0 || origin.stdout.trim() !== url) return false;
+  const head = await git(dir, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], { allowFailure: true });
+  return head.code === 0;
+}
+
 /** A local clone for `spec`, made on first use. */
 export async function ensureClone(spec: string, home: string, log: (line: string) => void): Promise<string> {
   const asPath = path.resolve(spec);
@@ -53,17 +63,22 @@ export async function ensureClone(spec: string, home: string, log: (line: string
 
   const url = upstreamUrl(spec);
   const dir = path.join(home, "repos", `${safeName(spec)}.git`);
-  const exists = await fs.stat(path.join(dir, "HEAD")).then(() => true, () => false);
-  if (!exists) {
-    log(`cloning ${spec}`);
-    await fs.mkdir(path.dirname(dir), { recursive: true });
-    await fs.rm(dir, { recursive: true, force: true });
-    const credentials = await resolveCredentials(githubSlug(url));
-    // Bare: Forklift works in its own workspace and never needs a second checkout.
-    await git(path.dirname(dir), [...credentialArgs(credentials, url), "clone", "--quiet", "--bare", url, dir], {
-      env: credentialEnv(credentials),
-    });
-  }
+  if (await usableClone(dir, url)) return dir;
+
+  // Not there, or left half-made by a clone that was cut short (a restart, a
+  // dropped connection). Clone beside it and move the result into place, so
+  // a directory at this path is always a whole clone.
+  log(`cloning ${spec}`);
+  const partial = `${dir}.cloning`;
+  await fs.mkdir(path.dirname(dir), { recursive: true });
+  await fs.rm(partial, { recursive: true, force: true });
+  const credentials = await resolveCredentials(githubSlug(url));
+  // Bare: Forklift works in its own workspace and never needs a second checkout.
+  await git(path.dirname(dir), [...credentialArgs(credentials, url), "clone", "--quiet", "--bare", url, partial], {
+    env: credentialEnv(credentials),
+  });
+  await fs.rm(dir, { recursive: true, force: true });
+  await fs.rename(partial, dir);
   return dir;
 }
 
