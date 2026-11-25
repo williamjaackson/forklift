@@ -21,7 +21,9 @@ services:
       FORKLIFT_REPOS: ${FORKLIFT_REPOS:?set FORKLIFT_REPOS}
       FORKLIFT_EVERY: ${FORKLIFT_EVERY:-3h}
       FORKLIFT_HANDOFF: /handoff
-      # Only for private forks, and read-only: lets the builder fetch the fork.
+      # Private forks: with a GitHub App, the publisher leaves a read-only
+      # token here that lasts an hour. Without an App, set a read-only token.
+      FORKLIFT_ACCESS: /access
       GH_TOKEN: ${FORKLIFT_READ_TOKEN:-}
       # The agent's credentials: one of these, for `agent: claude`.
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
@@ -29,6 +31,7 @@ services:
     volumes:
       - build-data:/data
       - handoff:/handoff
+      - access:/access:ro
     read_only: true
     tmpfs:
       - /tmp:size=1g,mode=1777
@@ -43,6 +46,7 @@ services:
     environment:
       FORKLIFT_REPOS: ${FORKLIFT_REPOS:?set FORKLIFT_REPOS}
       FORKLIFT_HANDOFF: /handoff
+      FORKLIFT_ACCESS: /access
       # Who Forklift acts as. A GitHub App (pull requests come from its bot)…
       FORKLIFT_APP_ID: ${FORKLIFT_APP_ID:-}
       FORKLIFT_APP_PRIVATE_KEY: ${FORKLIFT_APP_PRIVATE_KEY:-}
@@ -51,6 +55,7 @@ services:
     volumes:
       - publish-data:/data
       - handoff:/handoff:ro
+      - access:/access
     read_only: true
     tmpfs:
       - /tmp:size=256m,mode=1777
@@ -62,3 +67,4 @@ volumes:
   build-data:
   publish-data:
   handoff:
+  access:

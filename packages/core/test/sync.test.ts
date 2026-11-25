@@ -190,16 +190,16 @@ describe("rules", () => {
 
   it("forbid without replace: holds the merge for review when nobody can fix it", async () => {
     fx = await makeFixture({ "app.txt": "one\n" });
-    await fx.configure("forbid:\n  - pattern: 'ping\\.gg'\n");
+    await fx.configure("forbid:\n  - pattern: 'tracker\\.example'\n");
     const forkHead = await fx.remoteHead();
-    await fx.commit(fx.upstream, { "app.txt": "one\nhttps://ping.gg/telemetry\n" }, "upstream: telemetry");
+    await fx.commit(fx.upstream, { "app.txt": "one\nhttps://tracker.example/collect\n" }, "upstream: add a tracker");
 
     const result = await sync();
 
     expect(result.outcome).toBe("needs-review");
     expect(await fx.remoteHead()).toBe(forkHead);
     expect(result.report).toContain("Needs review");
-    expect(result.report).toContain("app.txt:2: /ping\\.gg/");
+    expect(result.report).toContain("app.txt:2: /tracker\\.example/");
     // Left alone until retry_after passes or the fork changes.
     expect((await sync()).outcome).toBe("waiting");
   });

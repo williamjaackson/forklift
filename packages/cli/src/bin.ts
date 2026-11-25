@@ -290,6 +290,7 @@ program
   .option("--every <duration>", "time between passes", process.env.FORKLIFT_EVERY ?? "3h")
   .option("--role <role>", "all (build and publish here), build, or publish", process.env.FORKLIFT_ROLE ?? "all")
   .option("--handoff <dir>", "directory a builder and a publisher share", process.env.FORKLIFT_HANDOFF)
+  .option("--access <dir>", "directory where a publisher leaves read-only tokens for a builder", process.env.FORKLIFT_ACCESS)
   .option("--once", "run one pass and exit", false)
   .option("--pr", "always open pull requests", false)
   .option("--no-agent", "do not run the agent")
@@ -314,6 +315,7 @@ program
       once: opts.once,
       role: opts.role as Role,
       handoff: opts.handoff ? path.resolve(opts.handoff) : undefined,
+      access: opts.access ? path.resolve(opts.access) : undefined,
       sync: { dryRun: opts.dryRun, pullRequest: opts.pr, noAgent: !opts.agent },
       log: stamp,
       signal: stop.signal,

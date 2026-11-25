@@ -1,8 +1,10 @@
 import { generateKeyPairSync, createVerify } from "node:crypto";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { appJwt, credentialArgs } from "../src/auth.js";
+import { appJwt, credentialArgs, issueReadAccess, resolveCredentials } from "../src/auth.js";
+import { agentEnv, buildEnv } from "../src/exec.js";
 import { loadContext } from "../src/context.js";
 import { git } from "../src/git.js";
 import { readHandoff } from "../src/handoff.js";
@@ -257,6 +259,26 @@ describe("acting as a GitHub App", () => {
     expect(claims.iat).toBeLessThan(now / 1000);
     const valid = createVerify("RSA-SHA256").update(`${head}.${body}`).verify(publicKey, Buffer.from(signature!, "base64url"));
     expect(valid).toBe(true);
+  });
+
+  it("lets a builder use a read-only token a publisher left for it, and nothing stronger", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "forklift-access-"));
+    try {
+      await fs.writeFile(path.join(dir, "owner__fork.token"), "ghs_readonly\n");
+      process.env.FORKLIFT_ACCESS = dir;
+
+      expect(await resolveCredentials("owner/fork")).toMatchObject({ kind: "token", token: "ghs_readonly" });
+      // No token was left for this one.
+      expect(await resolveCredentials("owner/other")).toMatchObject({ kind: "ambient", token: undefined });
+      // Without an App's key there is nothing to issue.
+      expect(await issueReadAccess("owner/fork", dir)).toBe(false);
+      // The agent and the fork's commands are not pointed at the directory.
+      expect(agentEnv().FORKLIFT_ACCESS).toBeUndefined();
+      expect(buildEnv().FORKLIFT_ACCESS).toBeUndefined();
+    } finally {
+      delete process.env.FORKLIFT_ACCESS;
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("offers a token to the fork's host and to no other", () => {

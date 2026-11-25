@@ -178,6 +178,12 @@ export function githubSlug(url: string): string | null {
   return match ? `${match[1]}/${match[2]}` : null;
 }
 
+/** A name for a fork ("owner/repo" or a URL) that is safe as a file or directory name. */
+export function safeName(spec: string): string {
+  const url = upstreamUrl(spec);
+  return (githubSlug(url) ?? url.replace(/^\w+:\/\//, "")).replace(/[^\w.-]+/g, "__");
+}
+
 export type PathMatcher = (file: string) => boolean;
 
 export function matcher(globs: string[]): PathMatcher {

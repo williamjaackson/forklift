@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { credentialArgs, credentialEnv, resolveCredentials } from "./auth.js";
-import { githubSlug, upstreamUrl } from "./config.js";
+import { credentialArgs, credentialEnv, issueReadAccess, resolveCredentials } from "./auth.js";
+import { githubSlug, safeName, upstreamUrl } from "./config.js";
 import { git } from "./git.js";
 import { runBuildOnly, runPublishOnly, runSync, type SyncOptions } from "./sync.js";
 
@@ -25,6 +25,12 @@ export interface WatchOptions {
   role?: Role;
   /** Directory shared by a builder and a publisher. Required for those roles. */
   handoff?: string;
+  /**
+   * Directory where a publisher running as a GitHub App leaves short-lived
+   * read-only tokens, so a builder can fetch private forks without a
+   * credential of its own. Default: $FORKLIFT_ACCESS.
+   */
+  access?: string;
   /** Where clones are kept. Default: $FORKLIFT_HOME or ~/.cache/forklift. */
   home?: string;
   sync?: Pick<SyncOptions, "dryRun" | "pullRequest" | "noAgent">;
@@ -39,12 +45,6 @@ export function forkliftHome(): string {
   );
 }
 
-/** A name for `spec` that is safe as a file or directory name. */
-function nameOf(spec: string): string {
-  const url = upstreamUrl(spec);
-  return (githubSlug(url) ?? url.replace(/^\w+:\/\//, "")).replace(/[^\w.-]+/g, "__");
-}
-
 /** A local clone for `spec`, made on first use. */
 export async function ensureClone(spec: string, home: string, log: (line: string) => void): Promise<string> {
   const asPath = path.resolve(spec);
@@ -52,7 +52,7 @@ export async function ensureClone(spec: string, home: string, log: (line: string
   if (isLocal) return asPath;
 
   const url = upstreamUrl(spec);
-  const dir = path.join(home, "repos", `${nameOf(spec)}.git`);
+  const dir = path.join(home, "repos", `${safeName(spec)}.git`);
   const exists = await fs.stat(path.join(dir, "HEAD")).then(() => true, () => false);
   if (!exists) {
     log(`cloning ${spec}`);
@@ -98,8 +98,12 @@ export async function runPass(options: WatchOptions): Promise<PassResult[]> {
     if (options.signal?.aborted) break;
     const tag = (line: string) => log(`[${repo}] ${line}`);
     try {
+      const slug = githubSlug(upstreamUrl(repo));
+      const access = options.access ?? process.env.FORKLIFT_ACCESS;
+      // First of all, so a builder waiting on this is not kept waiting by a slow clone.
+      if (role === "publish" && access && slug) await issueReadAccess(slug, access);
       const cwd = await ensureClone(repo, home, tag);
-      const file = options.handoff ? path.join(options.handoff, `${nameOf(repo)}.bundle`) : "";
+      const file = options.handoff ? path.join(options.handoff, `${safeName(repo)}.bundle`) : "";
       let summary: string;
       if (role === "build") {
         const report = await runBuildOnly({ cwd, out: file, noAgent: options.sync?.noAgent, log: tag });
@@ -138,10 +142,13 @@ export async function runWatch(options: WatchOptions): Promise<void> {
     throw new Error("No repositories to watch. Pass them as arguments or set FORKLIFT_REPOS.");
   }
   for (;;) {
-    await runPass(options);
+    const results = await runPass(options);
     if (options.once || options.signal?.aborted) return;
-    log(`next pass in ${Math.round(options.everyMs / 60_000)} min`);
-    await sleep(options.everyMs, options.signal);
+    // After a failure (the network, a token not issued yet) come back soon
+    // instead of sitting out the whole interval.
+    const wait = results.some((r) => r.error) ? Math.min(options.everyMs, 5 * 60_000) : options.everyMs;
+    log(`next pass in ${Math.max(1, Math.round(wait / 60_000))} min`);
+    await sleep(wait, options.signal);
     if (options.signal?.aborted) return;
   }
 }

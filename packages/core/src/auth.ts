@@ -1,5 +1,7 @@
 import { createSign } from "node:crypto";
 import fs from "node:fs/promises";
+import path from "node:path";
+import { safeName } from "./config.js";
 import { defaultIdentity, type Identity } from "./git.js";
 
 /**
@@ -61,11 +63,13 @@ async function appPrivateKey(): Promise<string | null> {
 
 const cache = new Map<string, { credentials: Credentials; expires: number }>();
 
-async function appCredentials(appId: string, key: string, slug: string): Promise<Credentials> {
-  const cached = cache.get(slug);
-  // Leave enough life in the token for a long sync.
-  if (cached && cached.expires - Date.now() > 20 * 60_000) return cached.credentials;
-
+/** Ask GitHub for a token for the App's installation on `slug`, optionally with fewer permissions. */
+async function installationToken(
+  appId: string,
+  key: string,
+  slug: string,
+  permissions?: Record<string, "read" | "write">,
+): Promise<{ jwt: string; token: string; expires: number }> {
   const jwt = appJwt(appId, key);
   const installation =
     process.env.FORKLIFT_APP_INSTALLATION_ID ??
@@ -79,8 +83,17 @@ async function appCredentials(appId: string, key: string, slug: string): Promise
   const granted = await api<{ token: string; expires_at: string }>(
     `/app/installations/${installation}/access_tokens`,
     jwt,
-    { method: "POST", body: { repositories: [slug.split("/")[1]] } },
+    { method: "POST", body: { repositories: [slug.split("/")[1]], ...(permissions ? { permissions } : {}) } },
   );
+  return { jwt, token: granted.token, expires: Date.parse(granted.expires_at) };
+}
+
+async function appCredentials(appId: string, key: string, slug: string): Promise<Credentials> {
+  const cached = cache.get(slug);
+  // Leave enough life in the token for a long sync.
+  if (cached && cached.expires - Date.now() > 20 * 60_000) return cached.credentials;
+
+  const { jwt, ...granted } = await installationToken(appId, key, slug);
 
   let identity = defaultIdentity();
   if (!process.env.FORKLIFT_GIT_NAME && !process.env.FORKLIFT_GIT_EMAIL) {
@@ -92,8 +105,33 @@ async function appCredentials(appId: string, key: string, slug: string): Promise
   }
 
   const credentials: Credentials = { kind: "app", token: granted.token, identity };
-  cache.set(slug, { credentials, expires: Date.parse(granted.expires_at) });
+  cache.set(slug, { credentials, expires: granted.expires });
   return credentials;
+}
+
+const accessFile = (dir: string, slug: string): string => path.join(dir, `${safeName(slug)}.token`);
+
+/**
+ * Leave a token in `dir` that lets the building half fetch `slug`, and do
+ * nothing else with it: read-only, this one repository, gone within the hour.
+ * Only a GitHub App can issue one. Returns false when Forklift is not
+ * running as an App.
+ *
+ * This is how a builder reads a private fork without being given a
+ * long-lived credential of its own: the publisher, which has the App's key,
+ * refreshes this on every pass.
+ */
+export async function issueReadAccess(slug: string, dir: string): Promise<boolean> {
+  const appId = process.env.FORKLIFT_APP_ID;
+  const key = appId ? await appPrivateKey() : null;
+  if (!appId || !key) return false;
+  const { token } = await installationToken(appId, key, slug, { contents: "read" });
+  const file = accessFile(dir, slug);
+  await fs.mkdir(dir, { recursive: true });
+  // Renamed into place, so a reader never sees half a token.
+  await fs.writeFile(`${file}.tmp`, token, { mode: 0o644 });
+  await fs.rename(`${file}.tmp`, file);
+  return true;
 }
 
 /** Work out how to act on `slug` ("owner/repo", or null when the fork is not on GitHub). */
@@ -106,7 +144,11 @@ export async function resolveCredentials(slug: string | null): Promise<Credentia
     }
     return appCredentials(appId, key, slug);
   }
-  const token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
+  let token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
+  // A read-only token left by a publisher (see issueReadAccess).
+  if (!token && slug && process.env.FORKLIFT_ACCESS) {
+    token = (await fs.readFile(accessFile(process.env.FORKLIFT_ACCESS, slug), "utf8").catch(() => "")).trim() || undefined;
+  }
   return { kind: token ? "token" : "ambient", token, identity: defaultIdentity() };
 }
 

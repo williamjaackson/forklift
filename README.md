@@ -105,7 +105,7 @@ By default Forklift's merge commits are authored by `forklift[bot]`, and its pul
 3. Install the App on your fork, and only on your fork.
 4. Give the publishing half `FORKLIFT_APP_ID` and `FORKLIFT_APP_PRIVATE_KEY` (the key file's contents, or its path in `FORKLIFT_APP_PRIVATE_KEY_FILE`).
 
-Forklift then asks GitHub for a token that works only on that fork and expires within the hour, each time it publishes. Pull requests opened by an App also start your other workflows, which ones opened by GitHub's default Actions token do not.
+Forklift then asks GitHub for a token that works only on that fork and expires within the hour, each time it publishes. When the two halves run separately, the publisher also leaves the builder a read-only token of the same kind, so a private fork needs no long-lived credential anywhere. Pull requests opened by an App also start your other workflows, which ones opened by GitHub's default Actions token do not.
 
 Without an App, use a fine-grained token limited to the fork, with the same permissions.
 
@@ -148,6 +148,10 @@ packages/cli    the `forklift` command
 deploy/         container entrypoint and compose file
 action.yml      GitHub Action wrapper
 ```
+
+## License
+
+[MIT](./LICENSE).
 
 ## Branding
 
