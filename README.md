@@ -100,14 +100,16 @@ The image is built by [`.github/workflows/image.yml`](./.github/workflows/image.
 
 By default Forklift's merge commits are authored by `forklift[bot]`, and its pull requests are opened by whoever owns the token it was given. To have pull requests come from a bot as well, give it a GitHub App of your own:
 
-1. Create the App. This link fills in the form: [github.com/settings/apps/new](https://github.com/settings/apps/new?name=forklift-YOURNAME&url=https://github.com/williamjaackson/forklift&public=false&webhook_active=false&contents=write&pull_requests=write&issues=write&workflows=write). Change the name (it must be unique on GitHub; the bot is named after it), and create it.
+1. Create the App. This link fills in the form: [github.com/settings/apps/new](https://github.com/settings/apps/new?name=forklift-YOURNAME&url=https://github.com/williamjaackson/forklift&public=false&webhook_active=false&contents=write&pull_requests=write&issues=write). Change the name (it must be unique on GitHub; the bot is named after it), and create it. It asks for read/write on Contents, Pull requests and Issues. Leave **Workflows** off unless your fork takes upstream's workflow files: without it, GitHub itself refuses any push that changes what your Actions run.
 2. On the App's page, note the **App ID** and generate a **private key**.
 3. Install the App on your fork, and only on your fork.
 4. Give the publishing half `FORKLIFT_APP_ID` and `FORKLIFT_APP_PRIVATE_KEY` (the key file's contents, or its path in `FORKLIFT_APP_PRIVATE_KEY_FILE`).
 
 Forklift then asks GitHub for a token that works only on that fork and expires within the hour, each time it publishes. Pull requests opened by an App also start your other workflows, which ones opened by GitHub's default Actions token do not.
 
-Without an App, use a fine-grained token limited to the fork, with read/write on Contents, Pull requests, Issues and Workflows.
+Without an App, use a fine-grained token limited to the fork, with the same permissions.
+
+If your fork does take upstream's workflow files, remember what that means: upstream decides what runs in your Actions, with your secrets. Most forks should list `.github/workflows/**` under `drop`.
 
 ## What Forklift trusts, and what it does not
 

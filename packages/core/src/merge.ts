@@ -157,8 +157,9 @@ export async function buildMerge(input: BuildInput): Promise<Build> {
     settled.push({ path: conflict.path, kind: conflict.kind, by: rule });
     const inFork = conflict.stages.includes(2);
     const inUpstream = conflict.stages.includes(3);
-    if (rule === "drop") remove.push(conflict.path);
-    else if (rule === "ours") (inFork ? takeFork : remove).push(conflict.path);
+    // `drop` and `ours` both leave a path as the fork has it: its own copy if
+    // it kept one, gone if it did not.
+    if (rule === "drop" || rule === "ours") (inFork ? takeFork : remove).push(conflict.path);
     else {
       regenerate.add(rules.regenerate(conflict.path)!);
       (inUpstream ? takeUpstream : inFork ? takeFork : remove).push(conflict.path);
@@ -182,7 +183,10 @@ export async function buildMerge(input: BuildInput): Promise<Build> {
   const enforceRules = async (): Promise<void> => {
     const added = (await changedSince(fork, "A")).filter(rules.drop);
     await withPaths(["rm", "--quiet", "--force", "--ignore-unmatch"], added);
-    const taken = (await changedSince(fork, "MDT")).filter((file) => rules.ruleFor(file) === "ours");
+    const taken = (await changedSince(fork, "MDT")).filter((file) => {
+      const rule = rules.ruleFor(file);
+      return rule === "ours" || rule === "drop";
+    });
     await withPaths(["checkout", fork], taken);
     for (const file of added) dropped.add(file);
     for (const file of taken) keptOurs.add(file);

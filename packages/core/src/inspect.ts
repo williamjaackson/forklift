@@ -62,12 +62,22 @@ export async function inspectMerge(input: InspectInput): Promise<Inspection> {
     breaches.push(`${CONFIG_FILENAME} was changed by the merge.`);
   }
 
-  // `drop` and `ours`, against the fork as it is now.
+  // `drop` and `ours`, against the fork as it is now. Both rules come to the
+  // same thing for a path the fork has, or has deleted: the merge leaves it
+  // exactly as the fork has it.
+  //   drop: nothing may be added, and nothing the fork kept may change.
+  //   ours: nothing the fork has may change. A file upstream adds is taken.
   const sinceFork = await changes(cwd, fork, tree);
+  const differsFromFork = new Set(sinceFork.map((change) => change.path));
   for (const change of sinceFork) {
-    if (change.kind === "A" && rules.drop(change.path)) {
-      breaches.push(`${change.path} was added, but matches \`drop\`.`);
-    } else if (change.kind !== "A" && rules.ruleFor(change.path) === "ours") {
+    const rule = rules.ruleFor(change.path);
+    if (rule === "drop") {
+      breaches.push(
+        change.kind === "A"
+          ? `${change.path} was added, but matches \`drop\`.`
+          : `${change.path} was changed, but matches \`drop\`: the fork's copy must stay as it is.`,
+      );
+    } else if (rule === "ours" && change.kind !== "A") {
       breaches.push(`${change.path} was changed, but matches \`ours\`.`);
     }
   }
@@ -77,9 +87,12 @@ export async function inspectMerge(input: InspectInput): Promise<Inspection> {
   const conflicted = new Set(auto.conflicts.map((c) => c.path));
   const unexplained = (await changes(cwd, auto.tree, tree)).filter((change) => {
     const rule = rules.ruleFor(change.path);
-    // `drop` and `ours` were just checked against the fork: whatever the
-    // difference from git's merge is on these paths, it is the rule's doing.
-    return rule !== "drop" && rule !== "ours";
+    // A rule accounts for a difference from git's merge only where the result
+    // is exactly what the rule dictates: the fork's own entry, untouched.
+    // Anything else on such a path (a new file under an `ours` pattern whose
+    // content is not what git merged, say) is a judgement like any other.
+    const ruled = (rule === "drop" || rule === "ours") && !differsFromFork.has(change.path);
+    return !ruled;
   });
 
   const judged: string[] = [];

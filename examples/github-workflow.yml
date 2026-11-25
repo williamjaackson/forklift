@@ -9,7 +9,7 @@
 # Secrets to add to the fork:
 #   CLAUDE_CODE_OAUTH_TOKEN   from `claude setup-token` (or use ANTHROPIC_API_KEY)
 #   FORKLIFT_APP_ID           a GitHub App installed on this fork, with read/write
-#   FORKLIFT_APP_PRIVATE_KEY  on Contents, Pull requests, Issues and Workflows
+#   FORKLIFT_APP_PRIVATE_KEY  on Contents, Pull requests and Issues
 name: Forklift
 
 on:

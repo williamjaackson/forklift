@@ -112,6 +112,25 @@ describe("rules", () => {
     expect(result.build?.dropped).toEqual(["ci/release.yml"]);
   });
 
+  it("drop: leaves alone a file the fork keeps under a dropped path", async () => {
+    fx = await makeFixture({ "app.txt": "one\n", "ci/build.yml": "v1\n", "ci/shared.yml": "v1\n" });
+    await fx.configure("drop: [ci/**]\n");
+    // The fork removes upstream's build, keeps shared.yml with its own edits, and adds one of its own.
+    await fx.forkCommit(
+      { "ci/build.yml": null, "ci/shared.yml": "fork\n", "ci/fork.yml": "mine\n" },
+      "fork: own CI",
+    );
+    await fx.commit(fx.upstream, { "ci/shared.yml": "v2\n", "ci/build.yml": "v2\n", "app.txt": "two\n" }, "upstream: CI");
+
+    const result = await sync();
+
+    expect(result.outcome).toBe("landed");
+    expect(await fx.files()).toEqual(["app.txt", "ci/fork.yml", "ci/shared.yml", "forklift.yaml"]);
+    expect(await fx.read("ci/shared.yml")).toBe("fork\n");
+    expect(await fx.read("ci/fork.yml")).toBe("mine\n");
+    expect(await fx.read("app.txt")).toBe("two\n");
+  });
+
   it("ours: never takes upstream's changes to files the fork owns", async () => {
     fx = await makeFixture({ "README.md": "Upstream\n", "LICENSE": "MIT\n", "app.txt": "one\n" });
     await fx.configure("ours: [README.md, LICENSE]\n");
